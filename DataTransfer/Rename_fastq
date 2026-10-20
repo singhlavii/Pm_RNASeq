@@ -1,0 +1,124 @@
+# The file naming was according to Bioplatforms system so I converted to my sample names using this script. Claude (Opus 5.5) was used to help generate this code and I cross checked it.
+
+#!/usr/bin/env bash
+# =============================================================================
+# rename_fastq.sh
+# Give the sequencing provider's FASTQ files your internal sample names.
+#
+# Usage:
+#   bash rename_fastq.sh <raw_fastq_dir> <sample_map.tsv> <output_dir> [--run]
+#
+# Example (from ~/Pm_RNAseq):
+#   bash rename_fastq.sh bpa_c2cf0246_20260626T0048 sample_map.tsv raw_renamed          # dry run
+#   bash rename_fastq.sh bpa_c2cf0246_20260626T0048 sample_map.tsv raw_renamed --run    # do it
+#
+# By default it only prints what it would do (a dry run). Add --run to create
+# the links. The original files are never changed: the script makes symbolic
+# links with the new names in <output_dir>.
+#
+# sample_map.tsv: two tab-separated columns, no header:
+#   638194    0-1
+#   638195    0-3
+#   ...
+# =============================================================================
+
+set -euo pipefail
+
+# ---- 1. Read the arguments ---------------------------------------------------
+if [[ $# -lt 3 ]]; then
+    echo "Usage: bash $0 <raw_fastq_dir> <sample_map.tsv> <output_dir> [--run]" >&2
+    exit 1
+fi
+
+RAW_DIR=$(realpath "$1")     # absolute path, so the symlinks work from anywhere
+MAP_FILE="$2"
+OUT_DIR="$3"
+DO_IT=false
+[[ "${4:-}" == "--run" ]] && DO_IT=true
+
+PREFIX="Pm_"   # text put before every name, e.g. PREFIX="Pm_" -> Pm_0-1_R1.fastq.gz
+
+[[ -d "$RAW_DIR"  ]] || { echo "ERROR: folder not found: $RAW_DIR" >&2; exit 1; }
+[[ -f "$MAP_FILE" ]] || { echo "ERROR: mapping file not found: $MAP_FILE" >&2; exit 1; }
+
+# ---- 2. Check the mapping table before touching anything ---------------------
+# Remove Windows line endings (\r) in case the table was saved from Excel on a PC,
+# and skip blank lines.
+CLEAN_MAP=$(tr -d '\r' < "$MAP_FILE" | awk 'NF > 0')
+
+# Every provider ID and every new name must appear only once.
+DUP_IDS=$(echo "$CLEAN_MAP"   | cut -f1 | sort | uniq -d)
+DUP_NAMES=$(echo "$CLEAN_MAP" | cut -f2 | sort | uniq -d)
+if [[ -n "$DUP_IDS" || -n "$DUP_NAMES" ]]; then
+    echo "ERROR: duplicate entries in $MAP_FILE:" >&2
+    [[ -n "$DUP_IDS"   ]] && echo "  IDs:   $DUP_IDS"   >&2
+    [[ -n "$DUP_NAMES" ]] && echo "  names: $DUP_NAMES" >&2
+    exit 1
+fi
+
+# ---- 3. Match each sample to its R1 and R2 files (checks only, no changes) ---
+SRCS=()      # original files
+DESTS=()     # new names
+ERRORS=0
+
+while IFS=$'\t' read -r ID NAME; do
+    for READ in R1 R2; do
+        # Find files that start with "<ID>_" and end with "_<READ>_001.fastq.gz".
+        # The "_" after the ID stops 63819 from also matching 638194.
+        shopt -s nullglob
+        HITS=( "$RAW_DIR/${ID}_"*"_${READ}_001.fastq.gz" )
+        shopt -u nullglob
+
+        if [[ ${#HITS[@]} -ne 1 ]]; then
+            echo "ERROR: expected 1 ${READ} file for ID ${ID}, found ${#HITS[@]}" >&2
+            ERRORS=$((ERRORS + 1))
+            continue
+        fi
+
+        SRC="${HITS[0]}"
+        DEST="$OUT_DIR/${PREFIX}${NAME}_${READ}.fastq.gz"
+
+        if [[ -e "$DEST" || -L "$DEST" ]]; then
+            echo "ERROR: $DEST already exists; not overwriting" >&2
+            ERRORS=$((ERRORS + 1))
+            continue
+        fi
+
+        SRCS+=( "$SRC" )
+        DESTS+=( "$DEST" )
+    done
+done <<< "$CLEAN_MAP"
+
+# ---- 4. Stop if anything is wrong, before any links are made -------------------
+N_FASTQ=$(find "$RAW_DIR" -maxdepth 1 -name "*.fastq.gz" | wc -l)
+
+if [[ $ERRORS -gt 0 ]]; then
+    echo "$ERRORS problem(s) found (see above). Nothing was changed." >&2
+    exit 1
+fi
+if [[ ${#SRCS[@]} -ne $N_FASTQ ]]; then
+    echo "ERROR: matched ${#SRCS[@]} files but the folder holds $N_FASTQ FASTQs;" \
+         "some files are not in the mapping table. Nothing was changed." >&2
+    exit 1
+fi
+
+# ---- 5. Show the plan, and make the links if --run was given -------------------
+for i in "${!SRCS[@]}"; do
+    echo "$(basename "${SRCS[$i]}")  ->  $(basename "${DESTS[$i]}")"
+done
+echo
+echo "All ${#SRCS[@]} FASTQ files matched."
+
+if ! $DO_IT; then
+    echo "Dry run only: nothing was changed. Add --run to create the links."
+    exit 0
+fi
+
+mkdir -p "$OUT_DIR"
+LOG="$OUT_DIR/rename_log.tsv"
+printf "new_name\toriginal_file\n" > "$LOG"
+for i in "${!SRCS[@]}"; do
+    ln -s "${SRCS[$i]}" "${DESTS[$i]}"
+    printf "%s\t%s\n" "$(basename "${DESTS[$i]}")" "${SRCS[$i]}" >> "$LOG"
+done
+echo "Done. Links are in $OUT_DIR; the old -> new list is in $LOG"
