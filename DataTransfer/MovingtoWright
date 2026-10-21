@@ -1,1 +1,3 @@
-placeholder.txt
+# Tmux and run this from rawdata folder
+
+(base) u7406681@rsb-061244:/media/raw_data/raw_data/Lavi/illumina/RNAseq/2026/June$ rsync -avP bpa_c2cf0246_20260626T0048 u7406681@wright.rsb.anu.edu.au:/mnt/data/wright/home/u7406681/Pm_RNAseq
