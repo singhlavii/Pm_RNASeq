@@ -8,7 +8,7 @@ For this analysis, I have a ```maprate_config.sh``` file that specifies all fold
 This builds the HISAT2 index for input for mapping.
 
 ### 2. ```maprate_map.pbs```
-This aligns the reads to the index. The alignments are discarded but the summaries are kept. 
+This aligns the reads to the index. The alignments are discarded but the summaries are kept. This was because I just wanted to count for now. 
 
 ### 3. ```maprate_summary.pbs```
 This builds the summary report and runs Multiqc
