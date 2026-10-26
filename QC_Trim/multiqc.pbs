@@ -1,0 +1,40 @@
+#!/bin/bash
+# =============================================================================
+# multiqc.pbs - combine all fastp reports for one step into one MultiQC report.
+# submit.sh submits this automatically after the fastp jobs. To run it on its
+# own:  qsub -v MODE=trim,CONFIG=/g/data/xf3/ls9057/Pmelanocephala/RNAseq/scripts/config.sh multiqc.pbs
+# =============================================================================
+#PBS -P xf3
+#PBS -q normal
+#PBS -l ncpus=1
+#PBS -l mem=4GB
+#PBS -l walltime=00:30:00
+#PBS -l storage=gdata/xf3+scratch/xf3
+
+set -euo pipefail
+source "$CONFIG"
+
+case "$MODE" in
+  qc)   IN_DIR=$QC_RAW_DIR;  NAME=fastp_raw;     TITLE="raw read QC" ;;
+  trim) IN_DIR=$QC_TRIM_DIR; NAME=fastp_trimmed; TITLE="trimmed read QC" ;;
+  *)    echo "ERROR: MODE must be qc or trim (got '$MODE')" >&2; exit 1 ;;
+esac
+OUT_DIR=$MULTIQC_DIR/$NAME
+mkdir -p "$OUT_DIR"
+
+N_JSON=$( { find "$IN_DIR" -maxdepth 1 -name "*.fastp.json" 2>/dev/null || true; } | wc -l)
+echo "Found $N_JSON fastp reports in $IN_DIR"
+if [[ $N_JSON -eq 0 ]]; then
+    echo "ERROR: no fastp reports in $IN_DIR" >&2
+    exit 1
+fi
+
+$MULTIQC --version
+$MULTIQC "$IN_DIR" \
+    --module fastp \
+    --outdir "$OUT_DIR" \
+    --filename "multiqc_$NAME" \
+    --title "P. melanocephala RNA-seq: $TITLE" \
+    --force
+
+echo "Report: $OUT_DIR/multiqc_$NAME.html"

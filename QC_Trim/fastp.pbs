@@ -1,0 +1,69 @@
+#!/bin/bash
+# =============================================================================
+# fastp.pbs - run fastp on ONE sample, in either QC-only or trimming mode.
+# Don't submit this directly; submit.sh submits one copy per sample and
+# passes in MODE (qc or trim), SAMPLE (e.g. 0-1) and CONFIG (path to config.sh).
+# =============================================================================
+#PBS -P xf3
+#PBS -q normal
+#PBS -l ncpus=8
+#PBS -l mem=16GB
+#PBS -l walltime=04:00:00
+#PBS -l storage=gdata/xf3+scratch/xf3
+
+set -euo pipefail
+source "$CONFIG"
+
+R1=$RAW_DIR/${SAMPLE}_R1.fastq.gz
+R2=$RAW_DIR/${SAMPLE}_R2.fastq.gz
+[[ -f "$R1" && -f "$R2" ]] || { echo "ERROR: missing reads for $SAMPLE" >&2; exit 1; }
+
+echo "Sample: $SAMPLE   Mode: $MODE   Host: $(hostname)"
+$FASTP --version
+
+case "$MODE" in
+
+  qc)
+    # Report only: no reads written, all trimming/filtering switched off
+    mkdir -p "$QC_RAW_DIR"
+    $FASTP \
+        --in1 "$R1" --in2 "$R2" \
+        --disable_adapter_trimming \
+        --disable_trim_poly_g \
+        --disable_quality_filtering \
+        --disable_length_filtering \
+        --overrepresentation_analysis \
+        --thread "$PBS_NCPUS" \
+        --html "$QC_RAW_DIR/${SAMPLE}.fastp.html" \
+        --json "$QC_RAW_DIR/${SAMPLE}.fastp.json" \
+        --report_title "$SAMPLE (raw reads)"
+    ;;
+
+  trim)
+    # Settings from the published method:
+    #   --detect_adapter_for_pe --cut_right --correction (all else default)
+    # Reads are written to .tmp names and renamed only when fastp finishes,
+    # so an interrupted job never leaves a file that looks complete.
+    mkdir -p "$TRIM_DIR" "$QC_TRIM_DIR"
+    $FASTP \
+        --in1 "$R1" --in2 "$R2" \
+        --out1 "$TRIM_DIR/${SAMPLE}_R1.trimmed.tmp.fastq.gz" \
+        --out2 "$TRIM_DIR/${SAMPLE}_R2.trimmed.tmp.fastq.gz" \
+        --detect_adapter_for_pe \
+        --cut_right \
+        --correction \
+        --thread "$PBS_NCPUS" \
+        --html "$QC_TRIM_DIR/${SAMPLE}.fastp.html" \
+        --json "$QC_TRIM_DIR/${SAMPLE}.fastp.json" \
+        --report_title "$SAMPLE (trimmed)"
+    mv "$TRIM_DIR/${SAMPLE}_R1.trimmed.tmp.fastq.gz" "$TRIM_DIR/${SAMPLE}_R1.trimmed.fastq.gz"
+    mv "$TRIM_DIR/${SAMPLE}_R2.trimmed.tmp.fastq.gz" "$TRIM_DIR/${SAMPLE}_R2.trimmed.fastq.gz"
+    ;;
+
+  *)
+    echo "ERROR: MODE must be qc or trim (got '$MODE')" >&2
+    exit 1
+    ;;
+esac
+
+echo "Finished $SAMPLE"
