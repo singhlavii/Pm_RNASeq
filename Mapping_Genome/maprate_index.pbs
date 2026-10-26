@@ -1,0 +1,25 @@
+#!/bin/bash
+# =============================================================================
+# maprate_index.pbs - build the HISAT2 index for the assembly (once).
+# Submitted by submit_maprate.sh.
+# =============================================================================
+#PBS -P xf3
+#PBS -q normal
+#PBS -l ncpus=8
+#PBS -l mem=32GB
+#PBS -l jobfs=100GB
+#PBS -l walltime=04:00:00
+#PBS -l storage=gdata/xf3+gdata/if89+scratch/xf3
+#PBS -j oe
+#PBS -m abe
+#PBS -M u7406681@anu.edu.au
+
+set -euo pipefail
+source "$CONFIG"
+
+echo "Genome: $GENOME_FA"
+python3 "$HISAT2_BUILD" --version | head -1
+mkdir -p "$INDEX_DIR"
+python3 "$HISAT2_BUILD" -p "$PBS_NCPUS" "$GENOME_FA" "$INDEX_PREFIX"
+ls -lh "$INDEX_DIR"
+echo "Index finished"

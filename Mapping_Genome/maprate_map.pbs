@@ -1,0 +1,46 @@
+#!/bin/bash
+# =============================================================================
+# maprate_map.pbs - map ONE sample to the assembly and record what fraction
+# of read pairs align. Alignments are discarded (-S /dev/null): only the
+# summary is kept, so this uses almost no disk space.
+# Submitted once per sample by submit_maprate.sh.
+# =============================================================================
+#PBS -P xf3
+#PBS -q normal
+#PBS -l ncpus=8
+#PBS -l mem=16GB
+#PBS -l walltime=04:00:00
+#PBS -l storage=gdata/xf3+gdata/if89+scratch/xf3
+#PBS -j oe
+#PBS -m abe
+#PBS -M u7406681@anu.edu.au
+
+set -euo pipefail
+source "$CONFIG"
+
+R1=$TRIM_DIR/${SAMPLE}_R1.trimmed.fastq.gz
+R2=$TRIM_DIR/${SAMPLE}_R2.trimmed.fastq.gz
+[[ -f "$R1" && -f "$R2" ]] || { echo "ERROR: missing trimmed reads for $SAMPLE" >&2; exit 1; }
+
+mkdir -p "$OUT_DIR"
+echo "Sample: $SAMPLE"
+{ $HISAT2 --version || true; } | head -1
+
+# -u N maps only the first N read pairs (quick estimate), if N_READS is set
+SUBSET=()
+[[ -n "${N_READS:-}" ]] && SUBSET=(-u "$N_READS") && echo "Mapping first $N_READS read pairs only"
+
+$HISAT2 \
+    -p "$PBS_NCPUS" \
+    -x "$INDEX_PREFIX" \
+    -1 "$R1" \
+    -2 "$R2" \
+    "${SUBSET[@]}" \
+    --max-intronlen "$MAX_INTRON" \
+    --dta \
+    --new-summary \
+    --summary-file "$OUT_DIR/${SAMPLE}.hisat2.summary.txt" \
+    -S /dev/null
+
+cat "$OUT_DIR/${SAMPLE}.hisat2.summary.txt"
+echo "Finished $SAMPLE"

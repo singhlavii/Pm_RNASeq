@@ -1,0 +1,37 @@
+#!/bin/bash
+# =============================================================================
+# maprate_summary.pbs - collect every sample's alignment rate into one table
+# (maprate/maprate_summary.tsv) and make a MultiQC report.
+# Submitted by submit_maprate.sh after all mapping jobs succeed.
+# =============================================================================
+#PBS -P xf3
+#PBS -q normal
+#PBS -l ncpus=1
+#PBS -l mem=4GB
+#PBS -l walltime=00:30:00
+#PBS -l storage=gdata/xf3+gdata/if89+scratch/xf3
+#PBS -j oe
+#PBS -m abe
+#PBS -M u7406681@anu.edu.au
+
+set -euo pipefail
+source "$CONFIG"
+
+TABLE=$OUT_DIR/maprate_summary.tsv
+printf "sample\tread_pairs\toverall_alignment_rate\n" > "$TABLE"
+
+for F in $(find "$OUT_DIR" -maxdepth 1 -name "*.hisat2.summary.txt" | sort -V); do
+    S=$(basename "$F" .hisat2.summary.txt)
+    PAIRS=$(awk -F: '/Total pairs/ {gsub(/ /,"",$2); print $2}' "$F")
+    RATE=$(awk -F: '/Overall alignment rate/ {gsub(/ /,"",$2); print $2}' "$F")
+    printf "%s\t%s\t%s\n" "$S" "$PAIRS" "$RATE" >> "$TABLE"
+done
+
+cat "$TABLE"
+
+$MULTIQC "$OUT_DIR" --module hisat2 --outdir "$OUT_DIR/multiqc" \
+    --filename multiqc_maprate --title "P. melanocephala RNA-seq: mapping rate" --force
+
+echo
+echo "Table:  $TABLE"
+echo "Report: $OUT_DIR/multiqc/multiqc_maprate.html"
