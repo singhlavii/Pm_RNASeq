@@ -1,0 +1,42 @@
+#!/bin/bash
+# =============================================================================
+# 03_check_strandedness.pbs - confirm library strand direction from the BAMs.
+#
+# HISAT2 marks each spliced alignment with the gene's strand (XS tag, from the
+# GT..AG splice site). If read 1 aligns to the OPPOSITE strand, the library is
+# "RF" - expected for NEBNext Ultra II Directional (dUTP) - and StringTie2
+# needs --rf. Uses primary read-1 alignments on one chromosome per sample.
+# =============================================================================
+#PBS -P xf3
+#PBS -q normal
+#PBS -l ncpus=1
+#PBS -l mem=8GB
+#PBS -l walltime=01:00:00
+#PBS -l storage=gdata/xf3+gdata/if89
+
+set -euo pipefail
+source "$CONFIG"
+
+mkdir -p "$STRAND_DIR"
+TABLE=$STRAND_DIR/strandedness_per_sample.tsv
+printf "sample\tspliced_read1_alignments\tfraction_RF\tlibrary_type\n" > "$TABLE"
+
+for BAM in $(ls "$ALIGN_DIR"/*.mapped_paired.sorted.bam | sort -V); do
+    SAMPLE=$(basename "$BAM" .mapped_paired.sorted.bam)
+    # -f 64 = read 1; -F 0x904 = skip unmapped, secondary, supplementary
+    $SAMTOOLS view -f 64 -F 0x904 "$BAM" "$STRAND_CHECK_CHROMOSOME" | awk -v s="$SAMPLE" '
+        $6 ~ /N/ {                                       # spliced alignments only
+            for (i = 12; i <= NF; i++) if ($i ~ /^XS:A:/) xs = substr($i, 6, 1)
+            reverse = int($2 / 16) % 2                   # read 1 on reverse strand?
+            n++
+            if ((reverse && xs == "+") || (!reverse && xs == "-")) rf++
+            xs = ""
+        }
+        END {
+            f = (n > 0) ? rf / n : 0
+            type = (f > 0.9) ? "RF_stringtie--rf" : (f < 0.1) ? "FR_stringtie--fr" : "unstranded_or_unclear"
+            printf "%s\t%d\t%.3f\t%s\n", s, n, f, type
+        }' >> "$TABLE"
+done
+
+cat "$TABLE"

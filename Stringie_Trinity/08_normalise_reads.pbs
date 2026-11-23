@@ -1,0 +1,44 @@
+#!/bin/bash
+# =============================================================================
+# 08_normalise_reads.pbs - Trinity in-silico read normalisation for ONE time
+# point x haplotype (Rita's settings + strand). Caps coverage of very highly
+# expressed genes so Trinity gets far fewer reads, without losing transcripts.
+# =============================================================================
+#PBS -P xf3
+#PBS -q normal
+#PBS -l ncpus=24
+#PBS -l mem=100GB
+#PBS -l jobfs=400GB
+#PBS -l walltime=24:00:00
+#PBS -l storage=gdata/xf3+gdata/if89
+
+set -euo pipefail
+source "$CONFIG"
+load_trinity_modules                          # Trinity, python+numpy, jellyfish, bowtie2, salmon, java
+export TMPDIR=$PBS_JOBFS
+
+TP_NAME=${TIMEPOINT}${TIMEPOINT_UNIT}
+IN=$READS_BY_HAP_DIR/${TP_NAME}.${HAP}
+OUT=$NORMALISED_DIR/${TP_NAME}.${HAP}
+WORK=$PBS_JOBFS/normalise_${TP_NAME}_${HAP}
+mkdir -p "$NORMALISED_DIR"
+
+$TRINITY_UTIL/insilico_read_normalization.pl \
+    --seqType fq \
+    --left "${IN}_R1.fastq.gz" --right "${IN}_R2.fastq.gz" \
+    --pairs_together \
+    --SS_lib_type "$TRINITY_LIBRARY_TYPE" \
+    --min_cov "$NORM_MIN_COV" --max_cov "$NORM_MAX_COV" \
+    --JM 100G --CPU "$PBS_NCPUS" --PARALLEL_STATS \
+    --output "$WORK"
+
+# Copy back compressed (gzip follows Trinity's symlinked outputs)
+gzip -c "$WORK/left.norm.fq"  > "$OUT.tmp_R1.fastq.gz"
+gzip -c "$WORK/right.norm.fq" > "$OUT.tmp_R2.fastq.gz"
+mv "$OUT.tmp_R1.fastq.gz" "${OUT}_R1.norm.fastq.gz"
+mv "$OUT.tmp_R2.fastq.gz" "${OUT}_R2.norm.fastq.gz"
+
+BEFORE=$(( $(zcat "${IN}_R1.fastq.gz" | wc -l) / 4 ))
+AFTER=$(( $(zcat "${OUT}_R1.norm.fastq.gz" | wc -l) / 4 ))
+echo "read pairs before: $BEFORE   after: $AFTER   kept: $(awk -v a=$AFTER -v b=$BEFORE 'BEGIN{printf "%.1f%%", 100*a/b}')"
+echo "Done: ${OUT}_R1.norm.fastq.gz / _R2.norm.fastq.gz"

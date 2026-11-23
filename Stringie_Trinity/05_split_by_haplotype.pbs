@@ -1,0 +1,36 @@
+#!/bin/bash
+# =============================================================================
+# 05_split_by_haplotype.pbs - split ONE time point's merged BAM into a hap1 BAM
+# and a hap2 BAM, using the chromosome names in the hap1 and hap2 FASTA files.
+# All alignments are kept (as in the published method): a read that aligns
+# equally well to both haplotypes supports the transcript on both.
+# =============================================================================
+#PBS -P xf3
+#PBS -q normal
+#PBS -l ncpus=4
+#PBS -l mem=16GB
+#PBS -l walltime=04:00:00
+#PBS -l storage=gdata/xf3+gdata/if89
+
+set -euo pipefail
+source "$CONFIG"
+
+mkdir -p "$HAPLOTYPE_DIR"
+TP_NAME=${TIMEPOINT}${TIMEPOINT_UNIT}                 # e.g. 3dpi
+MERGED_BAM=$MERGED_DIR/${TP_NAME}.merged.bam
+
+for HAP in hap1 hap2; do
+    [[ $HAP == hap1 ]] && FASTA=$ASSEMBLY_HAP1 || FASTA=$ASSEMBLY_HAP2
+    # Chromosome names = FASTA headers without ">" (and anything after a space)
+    CHROMOSOMES=$(grep '>' "$FASTA" | sed 's/^>//; s/ .*//')
+    echo "$HAP: $(echo "$CHROMOSOMES" | wc -l) chromosomes"
+
+    OUT_BAM=$HAPLOTYPE_DIR/${TP_NAME}.${HAP}.bam
+    $SAMTOOLS view -@ "$PBS_NCPUS" -b -o "$OUT_BAM.tmp" "$MERGED_BAM" $CHROMOSOMES
+    mv "$OUT_BAM.tmp" "$OUT_BAM"
+    $SAMTOOLS index "$OUT_BAM"
+    echo "$HAP alignments: $($SAMTOOLS view -c "$OUT_BAM")"
+done
+
+ls -lh "$HAPLOTYPE_DIR"/${TP_NAME}.*.bam
+echo "Done"

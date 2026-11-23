@@ -1,0 +1,21 @@
+#!/bin/bash
+# =============================================================================
+# 09_hisat2_index_per_haplotype.pbs - HISAT2 index of ONE haplotype on its own
+# (hap1 or hap2 FASTA), for remapping the normalised reads (Rita's workflow).
+# =============================================================================
+#PBS -P xf3
+#PBS -q normal
+#PBS -l ncpus=8
+#PBS -l mem=32GB
+#PBS -l walltime=02:00:00
+#PBS -l storage=gdata/xf3+gdata/if89
+
+set -euo pipefail
+source "$CONFIG"
+
+[[ $HAP == hap1 ]] && FASTA=$ASSEMBLY_HAP1 || FASTA=$ASSEMBLY_HAP2
+mkdir -p "$HAP_INDEX_DIR/$HAP"
+echo "Haplotype: $HAP   FASTA: $FASTA   sequences: $(grep -c '>' "$FASTA")"
+python3 "$HISAT2_BUILD" -p "$PBS_NCPUS" "$FASTA" "$HAP_INDEX_DIR/$HAP/$HAP"
+ls -lh "$HAP_INDEX_DIR/$HAP"
+echo "Done"

@@ -1,0 +1,50 @@
+#!/bin/bash
+# =============================================================================
+# 11_trinity_genome_guided.pbs - genome-guided Trinity for ONE time point x
+# haplotype, on the normalised reads mapped to that haplotype (step 10).
+#   --genome_guided_max_intron 3000 --jaccard_clip --max_memory 80G  (Rita)
+#   --SS_lib_type RF                                                 (step 3)
+# Trinity works in the job's local disk ($PBS_JOBFS); only the final FASTA is
+# copied back, with run-specific names so the 12 FASTAs can be combined.
+# =============================================================================
+#PBS -P xf3
+#PBS -q normal
+#PBS -l ncpus=24
+#PBS -l mem=96GB
+#PBS -l jobfs=100GB
+#PBS -l walltime=08:00:00
+#PBS -l storage=gdata/xf3+gdata/if89
+
+set -euo pipefail
+source "$CONFIG"
+load_trinity_modules                          # Trinity, python+numpy, jellyfish, bowtie2, salmon, java
+export TMPDIR=$PBS_JOBFS
+
+TP_NAME=${TIMEPOINT}${TIMEPOINT_UNIT}
+IN_BAM=$HAP_ALIGN_DIR/${TP_NAME}.${HAP}.normalised.sorted.bam
+RUN_NAME=Pm_${TP_NAME}_${HAP}
+WORK=$PBS_JOBFS/trinity_${TP_NAME}_${HAP}          # Trinity needs "trinity" in the name
+OUT_FASTA=$TRINITY_DIR/${TP_NAME}.${HAP}.Trinity-GG.fasta
+mkdir -p "$TRINITY_DIR"
+
+for P in Trinity python jellyfish bowtie2 salmon java samtools; do
+    printf "%-10s %s\n" "$P" "$(command -v $P || echo MISSING)"
+done
+python -c "import numpy; print('numpy     ', numpy.__version__)"
+
+Trinity \
+    --genome_guided_bam "$IN_BAM" \
+    --genome_guided_max_intron "$TRINITY_MAX_INTRON" \
+    --jaccard_clip \
+    --SS_lib_type "$TRINITY_LIBRARY_TYPE" \
+    --CPU "$PBS_NCPUS" \
+    --max_memory "$TRINITY_MAX_MEMORY" \
+    --output "$WORK"
+
+sed "s/^>/>${RUN_NAME}_/" "$WORK/Trinity-GG.fasta" > "$OUT_FASTA.tmp"
+mv "$OUT_FASTA.tmp" "$OUT_FASTA"
+if [[ -f "$WORK/Trinity-GG.fasta.gene_trans_map" ]]; then
+    sed "s/^/${RUN_NAME}_/; s/\t/\t${RUN_NAME}_/" "$WORK/Trinity-GG.fasta.gene_trans_map" > "$OUT_FASTA.gene_trans_map"
+fi
+echo "transcripts: $(grep -c '>' "$OUT_FASTA")   genes: $(cut -f1 "$OUT_FASTA.gene_trans_map" 2>/dev/null | sort -u | wc -l)"
+echo "Done: $OUT_FASTA"
