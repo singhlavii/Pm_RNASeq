@@ -1,0 +1,31 @@
+#!/bin/bash
+# =============================================================================
+# 10_hisat2_align_normalised_reads.pbs - map ONE set of normalised reads to its
+# own haplotype only (Rita: --max-intronlen 3000 --dta, sorted BAM).
+# =============================================================================
+#PBS -P xf3
+#PBS -q normal
+#PBS -l ncpus=8
+#PBS -l mem=16GB
+#PBS -l jobfs=20GB
+#PBS -l walltime=02:00:00
+#PBS -l storage=gdata/xf3+gdata/if89
+
+set -euo pipefail
+source "$CONFIG"
+
+TP_NAME=${TIMEPOINT}${TIMEPOINT_UNIT}
+IN=$NORMALISED_DIR/${TP_NAME}.${HAP}
+BAM=$HAP_ALIGN_DIR/${TP_NAME}.${HAP}.normalised.sorted.bam
+mkdir -p "$HAP_ALIGN_DIR"
+
+$HISAT2 -p "$PBS_NCPUS" -x "$HAP_INDEX_DIR/$HAP/$HAP" \
+        -1 "${IN}_R1.norm.fastq.gz" -2 "${IN}_R2.norm.fastq.gz" \
+        --max-intronlen "$MAX_INTRON_LENGTH" --dta \
+        --new-summary --summary-file "$HAP_ALIGN_DIR/${TP_NAME}.${HAP}.hisat2_summary.txt" \
+  | $SAMTOOLS sort -@ 8 -m 2G -T "$PBS_JOBFS/sort" -O bam -o "$BAM.tmp" -
+mv "$BAM.tmp" "$BAM"
+$SAMTOOLS index "$BAM"
+
+cat "$HAP_ALIGN_DIR/${TP_NAME}.${HAP}.hisat2_summary.txt"
+echo "Done: $BAM"

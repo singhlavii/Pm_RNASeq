@@ -1,0 +1,39 @@
+#!/bin/bash
+# =============================================================================
+# 06_stringtie2_assemble_transcripts.pbs - assemble transcripts with StringTie2
+# for ONE time point x haplotype.
+#   -s 2   keep single-exon transcripts with coverage >= 2 (default 4.75)
+#   -m 50  keep transcripts >= 50 bp (default 200)
+#   --rf   stranded library, read 1 antisense (NEBNext Directional; step 3)
+# =============================================================================
+#PBS -P xf3
+#PBS -q normal
+#PBS -l ncpus=8
+#PBS -l mem=32GB
+#PBS -l walltime=04:00:00
+#PBS -l storage=gdata/xf3+gdata/if89
+
+set -euo pipefail
+source "$CONFIG"
+
+mkdir -p "$STRINGTIE_DIR"
+TP_NAME=${TIMEPOINT}${TIMEPOINT_UNIT}                 # e.g. 3dpi
+IN_BAM=$HAPLOTYPE_DIR/${TP_NAME}.${HAP}.bam
+OUT_GTF=$STRINGTIE_DIR/${TP_NAME}.${HAP}.stringtie2.gtf
+LABEL=Pm_${TP_NAME}_${HAP}             # prefix for transcript IDs, e.g. Pm_3dpi_hap1.12.1
+
+echo "StringTie2 $($STRINGTIE --version)  input: $IN_BAM"
+$STRINGTIE "$IN_BAM" \
+    -p "$PBS_NCPUS" \
+    -s "$STRINGTIE_MIN_SINGLE_EXON_COVERAGE" \
+    -m "$STRINGTIE_MIN_TRANSCRIPT_LENGTH" \
+    $LIBRARY_STRAND \
+    -l "$LABEL" \
+    -o "$OUT_GTF.tmp"
+mv "$OUT_GTF.tmp" "$OUT_GTF"
+
+# Short summary: transcripts, genes (loci), single-exon transcripts
+awk -F'\t' '$3=="transcript" {t++} $3=="exon" {match($9,/transcript_id "[^"]+"/); n[substr($9,RSTART,RLENGTH)]++}
+            $3=="transcript" {match($9,/gene_id "[^"]+"/); g[substr($9,RSTART,RLENGTH)]=1}
+            END {for (k in n) if (n[k]==1) s++; printf "transcripts: %d   loci: %d   single-exon: %d\n", t, length(g), s}' "$OUT_GTF"
+echo "Done: $OUT_GTF"
