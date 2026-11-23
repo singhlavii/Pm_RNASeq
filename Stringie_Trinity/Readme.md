@@ -1,7 +1,11 @@
+## Usage ##
+
+Script order is:
+ ```00_config.sh``` > ```run_steps_01_to_03.sh``` > ```run_steps_04_to_06.sh```> ```run_steps_07_to_11.sh```
+
+All individual scripts are in ```scripts```
+
 ## Run record ##
-
-Edit ```00_config``
-
 
 Summary generated with Claude, Opus 5.5
 
